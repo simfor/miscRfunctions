@@ -862,11 +862,16 @@ getMemory <- function(){
 
 
 add.alpha <- function(col, alpha=1){
+  #Add alpha (transparency) to a color vector
+  #col = vector with colors (in a form accepted by col2rgb)
+  #alpha = alpha value between 0 & 1. Can be one number or a vector matching col
+  
   if(missing(col))
-    stop("Please provide a vector of colours.")
-  apply(sapply(col, col2rgb)/255, 2, 
+    stop("Please provide a vector of colors")
+  col.rgb <- rbind(sapply(col, col2rgb)/255, alpha)
+  apply(col.rgb, 2, 
         function(x) 
-          rgb(x[1], x[2], x[3], alpha=alpha))  
+          rgb(x[1], x[2], x[3], alpha=x[4]))  
 }
 
 plotGenoContTable <- function(geno, panelText = "frac", ...){
