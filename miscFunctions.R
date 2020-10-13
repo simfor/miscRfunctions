@@ -123,7 +123,7 @@ plot.manhattan <- function(pos, chr, y, log10 = T, col = wes_palette(name = 'Dar
 
 plot.manhattan2 <- function(pos, chr, y, log10 = T, cex.yaxis = 1.5, cex.xaxis = 2, 
                             ylim = NULL, zoom.chr = NULL, zoom.pos = NULL, col = NULL,
-                            xlab = '', ylab = '', ...){
+                            xlab = '', ylab = '', xaxt = 's', yaxt = 's', cex = .5, ...){
   #Partially recycled from GenABELs plot function
   #Different design than plot.manhattan
   #pos = vector with genomic positions
@@ -177,13 +177,13 @@ plot.manhattan2 <- function(pos, chr, y, log10 = T, cex.yaxis = 1.5, cex.xaxis =
     
     #Draw plot
     par(new = T)
-    plot(mymap, y, xaxt = 'n', yaxt = 'n', ylim = ylim, xlim = xlim, col = col[1], pch = 19, cex = .5, xlab = xlab, ylab = ylab, ...)
+    plot(mymap, y, xaxt = 'n', yaxt = 'n', ylim = ylim, xlim = xlim, col = col[1], pch = 19, cex = cex, xlab = xlab, ylab = ylab, ...)
     axis(side = 2, cex.axis = cex.yaxis)
     
     #Overlay more things?
     if(exists('y.list')){
       for(j in 1:length(y.list)){
-        points(mymap, y.list[[j]], xaxt = 'n', yaxt = 'n', ylim = ylim, xlim = xlim, col = col[j+1], pch = 19, cex = .5, xlab = '', ylab = '', ...)
+        points(mymap, y.list[[j]], xaxt = 'n', yaxt = 'n', ylim = ylim, xlim = xlim, col = col[j+1], pch = 19, cex = cex, xlab = '', ylab = '', ...)
       }
     }
   }
@@ -199,7 +199,7 @@ plot.manhattan2 <- function(pos, chr, y, log10 = T, cex.yaxis = 1.5, cex.xaxis =
     #Draw plot
     plot(pos[pos > zoom.pos[1] & pos < zoom.pos[2]], 
          y[pos > zoom.pos[1] & pos < zoom.pos[2]], 
-         xaxt = 'n', yaxt = 'n', col = col[1], pch = 19, cex = .5, xlab = '', ylab = '', ylim = ylim, ...)
+         xaxt = 'n', yaxt = 'n', col = col[1], pch = 19, cex = cex, xlab = '', ylab = '', ylim = ylim, ...)
     
     #Overlay more things?
     if(exists('y.list')){
@@ -207,13 +207,14 @@ plot.manhattan2 <- function(pos, chr, y, log10 = T, cex.yaxis = 1.5, cex.xaxis =
         y.overlay <- y.list[[j]][chr == zoom.chr]
         points(pos[pos > zoom.pos[1] & pos < zoom.pos[2]], 
                y.overlay[pos > zoom.pos[1] & pos < zoom.pos[2]], 
-               xaxt = 'n', yaxt = 'n', ylim = ylim, col = col[j+1], pch = 19, cex = .5, xlab = '', ylab = '', ...)
+               xaxt = 'n', yaxt = 'n', ylim = ylim, col = col[j+1], pch = 19, cex = cex, xlab = '', ylab = '', ...)
       }
     }
     
-    
-    axis(side = 2, cex.axis = cex.yaxis)
-    axis(side = 1, cex.axis = cex.xaxis)
+    if(yaxt != 'n')
+      axis(side = 2, cex.axis = cex.yaxis)
+    if(xaxt != 'n')
+      axis(side = 1, cex.axis = cex.xaxis)
   }
 }
 
@@ -830,6 +831,17 @@ matrixPairsWhere <- function(x, expr, rNames = NULL, cNames = NULL, symmetric = 
   # }
   # else
     return(result)
+}
+
+matrix2pairs <- function (m, samples) {
+  #Extract pairwise values from a matrix and return in long format:
+  #rowname  colname  value
+  #   .       .      .
+  #   .       .      .
+  #Stolen from extract.val in the phylip package
+  
+  i <- cbind(match(samples[, 1], rownames(m)), match(samples[, 2], colnames(m)))
+  m[i]
 }
 
 ll <- function(){
