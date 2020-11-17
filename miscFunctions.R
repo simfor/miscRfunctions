@@ -844,8 +844,11 @@ matrix2pairs <- function (m, samples) {
   m[i]
 }
 
-ll <- function(){
-  sapply(ls(envir=.GlobalEnv), function(x){format(object.size(get(x)), units = 'auto')})
+ll <- function(sort = F, units = 'auto'){
+  if(sort)
+    sort(sapply(ls(envir=.GlobalEnv), function(x){format(object.size(get(x)), units = units)}), decreasing = T)
+  else
+    sapply(ls(envir=.GlobalEnv), function(x){format(object.size(get(x)), units = units)})
 }
 
 plot.wgcna_softThreshold <- function(sft, cex.text = 0.9){
@@ -867,11 +870,6 @@ plot.wgcna_softThreshold <- function(sft, cex.text = 0.9){
   text(sft$fitIndices[,1], sft$fitIndices[,5], labels=sft$fitIndices$Power, cex=cex.text,col="red")
   
 }
-
-getMemory <- function(){
-  print(sort(sapply(ls(.GlobalEnv),function(x){format(object.size(get(x)),units = "GB")})))
-  }
-
 
 add.alpha <- function(col, alpha=1){
   #Add alpha (transparency) to a color vector
@@ -1027,4 +1025,178 @@ plot_cnv_coverage <- function(cnv_list, pdf_file = "~/Projects/Herring/doc/cnv_v
   dev.off()
   return(invisible(list(del_df = del_cov_v2.0.2_df, dup_df = dup_cov_v2.0.2_df)))
 }
+
+
+# Function to plot color bar. Stolen and slightly modified from https://stackoverflow.com/questions/9314658/colorbar-from-custom-colorramppalette
+color.bar <- function(lut, min, max=-min, nticks=11, ticks=seq(min, max, len=nticks), cex.axis = 2, ...) {
+  scale = (length(lut)-1)/(max-min)
+  
+  par(mar = c(1,5,4,1))
+  plot(c(0,10), c(min,max), type='n', bty='n', xaxt='n', xlab='', yaxt='n', ylab='', ...)
+  axis(2, ticks, las=1, cex.axis = cex.axis, line = -1)
+  for (i in 1:(length(lut)-1)) {
+    y = (i-1)/scale + min
+    rect(0,y,10,y+1/scale, col=lut[i], border=NA)
+  }
+}
+
+
+#Function to simulate a pair of polygenic traits. With pleiotropy etc
+genBivarCov.simulatePair_outbred <- function(n_loci = 200, n_ind = 250, n_perInd = 4, 
+                                             h2.add.t1 = 0.4, h2.add.t2 = 0.4, # The heritabilities of the two traits. If rhog > 0, h2.add.t2 will approach h2.add.t1
+                                             h2.cov = 0.4,                     # The heritability of the intra-individual correlation/causality t1 -> t2
+                                             rhog = 0,                         # Genetic correlation (pleiotropy). Here, it is defined as the fraction of overlapping causal loci. Hence rhog is proportional, but not equal to, genetic correlation
+                                             mu1 = 0, mu2 = 0,                 # The intercepts/population means for the traits
+                                             beta_12 = 0,                      # The population mean of the effect t1 -> t2
+                                             geno = NULL,                      # If null, the genotype is simulated
+                                             freqDistr = 'U',                  # Distribution to draw allele frequencies from 
+                                             returnGRM = T, 
+                                             returnGeno = F,
+                                             nrPops = NULL, Fst = NULL,        # Controls the degree of genetic stratification in the simulated population
+                                             postproc = FALSE,
+                                             e.cov = 0,
+                                             trait1.binary = F, 
+                                             trait1.fixed = F,                 # trait1 the same across all individuals. For instance equal time points when trait2 is measured. This should affect var(trait2)
+                                             qtls.t1 = NA, qtls.t2 = NA        # Number of large-ish QTLs to add per trait (above the polygenic effect). NOTE: h2.add.t1 and h2.add.t2 will no longer be correct
+                                             )                 
+{
+  #Same scenario as in the function genBivarCov.simulatePairKin() but simulating genotypes in outbred populations, rather than nuclear families
+  #The GRM is SNP based and hence more dense than in the *Kin functions
+  #NOTE: rhog is the fraction of overlapping causal loci, which is proportional but not equal to the genetic correlation. When rhog > 0, h2.add.t2 and h2.cov should also be proportional but not equal to the true parameter values
+  # Simulation:
+  #   trait1 ~ g.add.t1 + e.t1
+  #   trait2 ~ g.add.t2 + g.cov * trait1 + e.t2
+  # Where:
+  #   g.cov = polygenic effect on cor(trait1, trait2)
+  #   g.add = additive polygenic effect on trait1/trait2. g.add per individual is the sum of all the SNP effects, where the fraction of overlapping causal SNPs is determined by rhog
+  
+  stopifnot(h2.add.t1 >= 0 & h2.add.t1 <= 1)
+  totVar.t2 <- h2.cov + h2.add.t2 + e.cov
+  stopifnot(totVar.t2 >= 0 & totVar.t2 <= 1)
+  
+  #### Simulate Genotypes ####
+  if(is.null(geno)){
+    if(!is.null(nrPops) & !is.null(Fst)){ #Simulate stratified population
+      stopifnot(!n_ind %% nrPops)
+      geno <- sim_pop(N = n_ind/nrPops, M = n_loci, Fst = Fst, nrPops = nrPops)
+    }
+    else{ #Simulate unrelated individuals
+      #Allele frequency distribution
+      if(freqDistr == 'U' | freqDistr == 'u'){
+        #Draw alleles from from a U-shaped freq distribution
+        tmp <- seq(from = .01, to = .99, by = .01)
+        prob <- 1/(tmp*(1-tmp))
+        prob <- prob/max(prob)
+        p <- sample(size = n_loci, x = tmp , prob = prob, replace = T)
+      }
+      else if(freqDistr == 'uni' | freqDistr == 'uniform')
+        p <- runif(n_loci, 0.1, 0.9)
+      else if(freqDistr > 0 & freqDistr < 1)
+        p <- rep(freqDistr, n_loci)
+      else
+        stop(paste('Did not recognize freqDistr:', freqDistr))
+      
+      #Assign genotypes according to HW
+      geno <- matrix(nrow = n_ind, ncol = n_loci)
+      for(i in 1:n_ind){
+        # geno[i,] <- sapply(X = p, FUN = function(x){sample(x = -1:1, size = 1, prob = c(x^2, 2*x*(1-x), (1-x)^2))}) #Same thing as below but slower
+        haplo1 <- as.numeric(runif(n_loci) < p)
+        haplo2 <- as.numeric(runif(n_loci) < p)
+        geno[i,] <- haplo1 + haplo2
+      }
+    }
+    
+    #Remove non-polymorphic loci
+    fixed <- apply(geno, 2, var) == 0
+    if(any(fixed)){
+      geno <- geno[, !fixed]
+      n_loci <- sum(!fixed)
+    }
+  }
+  
+  # Center & scale
+  col_means <- colMeans(geno, na.rm = TRUE)
+  col_sd <- apply(geno, 2, sd, na.rm = TRUE)
+  # col_freq <- col_means / 2  # col_means = 2 * col_freq
+  # col_sd <- sqrt(2 * col_freq * (1 - col_freq))
+  Z <- sweep(geno, 2, col_means, "-")
+  Z <- sweep(Z, 2, col_sd , "/")
+  
+  if(returnGRM){
+    Zg <- Z / sqrt(n_loci)
+    G <- tcrossprod(Zg) # the same as tcrossprod(Z) / M
+    rownames(G) <- colnames(G) <- 1:n_ind 
+  }
+  else
+    G <- NA
+  
+  
+  #### Simulate phenotypes ####
+  dat <- data.frame(id = rep(c(1:n_ind), each = n_perInd),
+                    rep = rep(1:n_perInd, n_ind), obs = seq(1, n_ind*n_perInd),
+                    trait1 = 0.0, trait2 = 0.0,
+                    g.add.t1 = 0.0, g.add.t2 = 0.0,
+                    g.cov = 0.0)
+  
+  #Additive genetic effect per locus. Amount of overlap in causative loci determined by rhog. This is what induces the pleiotropy / genetic correlation
+  b.trait1 <- rnorm(n_loci, 0, sqrt(h2.add.t1/n_loci))
+  b.trait2 <- rnorm(n_loci, 0, sqrt(h2.add.t2/n_loci))
+  #Add larger QTLs. NOTE: h2.add.t1 and h2.add.t2 will no longer be correct
+  if(!is.na(qtls.t1)){
+    qtls.t1 <- sample(1:n_loci, qtls.t1)
+    b.trait1[qtls.t1] <- rnorm(qtls.t1, 1, .5)
+  }
+  if(!is.na(qtls.t2)){
+    qtls.t2 <- sample(1:n_loci, qtls.t2)
+    b.trait2[qtls.t2] <- rnorm(qtls.t2, 1, .5)
+  }
+  
+  if(rhog > 0)
+    b.trait2[1:round(rhog*n_loci)] <- b.trait1[1:round(rhog*n_loci)]
+  
+  #Adds up to genetic effect per individual. Saving in order to compare to blup estimates
+  g.add.t1 <- Z %*% b.trait1
+  g.add.t2 <- Z %*% b.trait2
+  dat$g.add.t1 <- g.add.t1[dat$id]
+  dat$g.add.t2 <- g.add.t2[dat$id]
+  
+  #Genetic effect per locus on individual correlation
+  b.cov <- rnorm(n_loci, 0, sqrt(h2.cov/n_loci)) 
+  #Adds up to genetic effect per individual. Saving in order to compare to blup estimates
+  g.cov <- Z %*% b.cov
+  dat$g.cov <- g.cov[dat$id]
+  
+  #Non genetic effect on individual slope
+  dat$res.cov <- rep(rnorm(n_ind*n_perInd, sd = sqrt(e.cov)))
+  
+  #Individual phenotypes are the sum of the genetic effects + environmental noise
+  if(trait1.fixed){
+    t <- 1:n_perInd - mean(1:n_perInd)
+    dat$trait1 <- rep(t, times = n_ind)
+  }
+  else{
+    y1 <- mu1 + dat$g.add.t1 + rnorm(n = n_ind*n_perInd, mean = 0, sd = sqrt(1 - h2.add.t1))
+    if(trait1.binary)
+      dat$trait1 <- as.numeric(cut(y1, breaks = 2)) - 1 #Discretize trait1
+    else
+      dat$trait1 <- y1
+  }
+  
+  dat$trait2 <- mu2 + dat$g.add.t2 + (beta_12 + dat$g.cov + dat$res.cov) * dat$trait1 + rnorm(n = n_ind*n_perInd, mean = 0, sd = sqrt(1 - h2.add.t2 - h2.cov - e.cov))
+  
+  if(postproc) {
+    dat <- within(dat, {
+      id <- as.character(id)
+      rid <- id
+      #trait1 <- as.numeric(scale(trait1))
+      #trait2 <- as.numeric(scale(trait2))
+    })  
+  }
+  
+  if(!returnGeno)
+    geno <- NULL
+  
+  return(list(pheno = dat, G = G, geno = geno, qtls.t1 = qtls.t1, qtls.t2 = qtls.t2))
+}
+
 
