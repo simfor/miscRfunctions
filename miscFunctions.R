@@ -1200,3 +1200,74 @@ genBivarCov.simulatePair_outbred <- function(n_loci = 200, n_ind = 250, n_perInd
 }
 
 
+#Modification of the clump.markers function from cgmisc. I've modified it to:
+# - Take data.frame input rather than GenABEL objects
+# - Take arbitrary metrics to base the clumping on, instead of just r2
+#Authors: Marcin Kierczak, Simon Forsberg
+clump.markers <- function (assoc, snp.cor, chr = 1, bp.dist = 250000, p1 = 1e-04, 
+                           p2 = 0.01, r2 = 0.5, image = F, verbose = F) 
+{
+  #assoc = a data.frame (or table) with p-vals per SNP (pos, chr, p)
+  #snp.cor = snp-by-snp matrix with metric to base clumping on. r^2 in the plink original 
+  if(!all(colnames(assoc)[1:3] == c('pos', 'chr', 'p')))
+    stop('The first three columns of assoc need to be: pos, chr, p')
+  if(ncol(snp.cor) != nrow(snp.cor))
+    stop('snp.cor is not square. It should be a snp-x-snp matrix with metric to clump on')
+  if(nrow(snp.cor) != nrow(assoc))
+    stop('Dimensions of assoc and snp.cor do not match')
+  
+  snpNames <- paste(assoc$pos, assoc$chr, sep = '_')
+  rownames(assoc) <- snpNames
+  rownames(snp.cor) <- colnames(snp.cor) <- snpNames
+  
+  assoc.chr <- assoc[assoc$chr == chr,]
+  assoc.sorted <- assoc[order(assoc.chr$p), ]
+  signif.p1 <- rownames(assoc.sorted)[assoc.sorted$p <= p1]
+  signif.p2 <- rownames(assoc.chr)[assoc.chr$p <= p2]
+  assoc.signif <- assoc.chr[rownames(assoc.chr) %in% signif.p2, ]
+  snp.cor <- snp.cor[signif.p2, signif.p2]
+  
+  d <- as.matrix(dist(cbind(assoc.signif$pos, rep(0, times = length(signif.p2)))))
+  clumpmatrix <- matrix(rep(0, times = length(signif.p2)^2), 
+                        nrow = length(signif.p2), ncol = length(signif.p2))
+  clumpmatrix[which(d <= bp.dist)] <- clumpmatrix[which(d <=  bp.dist)] + 1
+  clumpmatrix[which(snp.cor >= r2)] <- clumpmatrix[which(snp.cor >=  r2)] + 3
+  
+  marker.names <- rownames(assoc.signif)
+  rownames(clumpmatrix) <- colnames(clumpmatrix) <- marker.names
+  used <- rep(0, times = length(signif.p2))
+  clumps <- list()
+  for (i in 1:length(signif.p1)) {
+    marker <- signif.p1[i]
+    marker.index <- which(signif.p2 == marker)
+    if (used[marker.index] == 0) {
+      used[marker.index] <- 1
+      clump <- which(clumpmatrix[marker, ] == 4)
+      unused <- which(used[clump] == 0)
+      clump <- clump[unused]
+      if (length(clump) > 0) {
+        p <- paste("Marker ", marker, " clumps with markers: ", 
+                   paste(marker.names[clump], collapse = ", "), 
+                   sep = "")
+        snpnames <- c(marker, marker.names[clump])
+        clumps[[marker]] <- assoc.signif[marker.names %in% marker.names, ]
+        if (verbose) {
+          print(p)
+        }
+      }
+      used[clump] <- 1
+    }
+  }
+  if (image == T) {
+    par(mfrow = c(1, 3))
+    image(snp.cor, col = rev(heat.colors(100)), main = "r2 matrix")
+    image(d, col = rev(heat.colors(100)), main = "distance matrix")
+    image(clumpmatrix, col = c("cornsilk1", "blue", "tomato", "red"), main = "clumping matrix")
+  }
+  if (length(clumps) == 0) {
+    warning("No clumps found in dataset!")
+  }
+  clumps
+}
+
+
