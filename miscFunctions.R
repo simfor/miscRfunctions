@@ -1217,6 +1217,13 @@ clump.markers <- function (assoc, snp.cor, chr = 1, bp.dist = 250000, p1 = 1e-04
     stop('Dimensions of assoc and snp.cor do not match')
   
   snpNames <- paste(assoc$pos, assoc$chr, sep = '_')
+  duplSNPs <- duplicated(snpNames)
+  if(any(duplSNPs)){
+    warning('Data contains duplicated SNPs. Removing duplicates')
+    snpNames <- snpNames[!duplSNPs]
+    assoc <- assoc[!duplSNPs, ]
+    snp.cor <- snp.cor[!duplSNPs, !duplSNPs]
+  }
   rownames(assoc) <- snpNames
   rownames(snp.cor) <- colnames(snp.cor) <- snpNames
   
