@@ -1257,7 +1257,7 @@ clump.markers <- function (assoc, snp.cor, chr = 1, bp.dist = 250000, p1 = 1e-04
                    paste(marker.names[clump], collapse = ", "), 
                    sep = "")
         snpnames <- c(marker, marker.names[clump])
-        clumps[[marker]] <- assoc.signif[marker.names %in% marker.names, ]
+        clumps[[marker]] <- assoc.signif[marker.names %in% snpnames, ]
         if (verbose) {
           print(p)
         }
